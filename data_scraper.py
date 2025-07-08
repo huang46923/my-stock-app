@@ -4,7 +4,7 @@ import pandas as pd
 
 def fetch_fin_ratio(stock_id):
     """
-    從財務比率表抓 ROE 和 每股自由現金流量
+    從 財務比率表 抓 ROE 和 每股自由現金流量
     """
     url = f"https://goodinfo.tw/tw/StockFinDetail.asp?RPT_CAT=XX&STOCK_ID={stock_id}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -27,7 +27,7 @@ def fetch_fin_ratio(stock_id):
             break
 
     if target_table is None:
-        print("❗️ 找不到財務比率表")
+        print("❗️ 找不到 財務比率表")
         return pd.DataFrame()
 
     rows = target_table.find_all('tr')
@@ -72,7 +72,7 @@ def fetch_fin_ratio(stock_id):
 
 def fetch_dividend_policy(stock_id):
     """
-    從股利政策頁抓 盈餘分配率(%) ➜ 合計欄
+    從 股利政策頁 抓 盈餘分配率(%) ➜ 合計欄
     """
     url = f"https://goodinfo.tw/tw/StockDividendPolicy.asp?STOCK_ID={stock_id}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -95,7 +95,7 @@ def fetch_dividend_policy(stock_id):
             break
 
     if target_table is None:
-        print("❗️ 找不到股利政策表")
+        print("❗️ 找不到 股利政策表")
         return pd.DataFrame()
 
     rows = target_table.find_all('tr')
@@ -131,13 +131,17 @@ def fetch_dividend_policy(stock_id):
 
 def fetch_data(stock_id):
     """
-    主函式：抓兩個頁面，合併資料，計算g
+    主函式：抓兩頁 ➜ 合併 ➜ 計算 g
     """
     df_fin = fetch_fin_ratio(stock_id)
     df_div = fetch_dividend_policy(stock_id)
 
-    if df_fin.empty or df_div.empty:
-        print("❗️ 其中一個表抓不到")
+    if df_fin.empty:
+        print("❗️ 財務比率表抓不到")
+        return pd.DataFrame()
+
+    if df_div.empty:
+        print("❗️ 股利政策抓不到")
         return pd.DataFrame()
 
     df = pd.merge(df_fin, df_div, on='Year', how='inner')
@@ -146,7 +150,6 @@ def fetch_data(stock_id):
         print("❗️ 兩表合併後沒資料")
         return pd.DataFrame()
 
-    # 計算 g
     df['g'] = df['ROE'] * (1 - df['DividendPayoutRatio'])
 
     return df
