@@ -133,7 +133,7 @@ def fetch_dividend_policy(stock_id):
 
 def fetch_data(stock_id):
     """
-    主函式：抓兩頁 ➜ 合併 ➜ 計算 g ➜ 取近5年
+    主函式：抓兩頁 ➜ 合併 ➜ 計算 g ➜ 最後取近5年
     """
     df_fin = fetch_fin_ratio(stock_id)
     df_div = fetch_dividend_policy(stock_id)
@@ -156,7 +156,7 @@ def fetch_data(stock_id):
     # 計算 g
     df['g'] = df['ROE'] * (1 - df['DividendPayoutRatio'])
 
-    # 取近5年
+    # 合併後再取近5年
     df = df.sort_values(by='Year', ascending=False).head(5)
 
     return df
