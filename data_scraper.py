@@ -73,9 +73,9 @@ def fetch_fin_ratio(stock_id):
 
 def fetch_dividend_policy(stock_id):
     """
-    從 股利政策頁 抓 盈餘分配率(%) ➜ 只保留年度總合行
+    從 股利政策頁 抓 盈餘分配率(%) ➜ 固定抓「發放年度」模式
     """
-    url = f"https://goodinfo.tw/tw/StockDividendPolicy.asp?STOCK_ID={stock_id}"
+    url = f"https://goodinfo.tw/tw/StockDividendPolicy.asp?STOCK_ID={stock_id}&YEAR_MODE=發放年度"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
@@ -133,7 +133,7 @@ def fetch_dividend_policy(stock_id):
 
 def fetch_data(stock_id):
     """
-    主函式：抓兩頁 ➜ 合併 ➜ 計算 g ➜ 最後取近5年
+    主函式：抓兩頁 ➜ 合併 ➜ 計算 g ➜ 顯示所有交集年份
     """
     df_fin = fetch_fin_ratio(stock_id)
     df_div = fetch_dividend_policy(stock_id)
@@ -156,7 +156,7 @@ def fetch_data(stock_id):
     # 計算 g
     df['g'] = df['ROE'] * (1 - df['DividendPayoutRatio'])
 
-    # 合併後再取近5年
-    df = df.sort_values(by='Year', ascending=False).head(5)
+    # 顯示所有交集年份（不硬限制5筆）
+    df = df.sort_values(by='Year', ascending=False)
 
     return df
