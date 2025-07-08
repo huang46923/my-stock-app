@@ -13,15 +13,17 @@ def fetch_data(stock_id):
         "User-Agent": "Mozilla/5.0"
     }
 
-    # 發送GET請求
-    res = requests.get(url, headers=headers)
-    res.encoding = 'utf-8'
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+    except Exception as e:
+        print(f"❗️ 網頁請求失敗: {e}")
+        return pd.DataFrame()  # 傳回空的
 
-    # 解析HTML
+    res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
     tables = soup.find_all('table')
 
-    # 找到含ROE資料的表格
     target_table = None
     for table in tables:
         if 'ROE' in table.text and '股利發放率' in table.text:
@@ -29,9 +31,10 @@ def fetch_data(stock_id):
             break
 
     if target_table is None:
-        raise ValueError("❗️ 找不到含ROE/股利發放率的表格，請確認股票代碼正確")
+        print("❗️ 找不到含ROE/股利發放率的表格")
+        return pd.DataFrame()
 
-    # 解析表格
+    # 解析表
     rows = target_table.find_all('tr')
     years = []
     roe_values = []
@@ -48,7 +51,6 @@ def fetch_data(stock_id):
         except ValueError:
             continue
 
-        # 只取近5年
         if len(years) >= 5:
             break
 
@@ -72,7 +74,10 @@ def fetch_data(stock_id):
         payout_values.append(payout)
         fcf_values.append(fcf)
 
-    # 建立DataFrame
+    if not years:
+        print("❗️ 解析到的資料是空的")
+        return pd.DataFrame()
+
     df = pd.DataFrame({
         'Year': years,
         'ROE': roe_values,
