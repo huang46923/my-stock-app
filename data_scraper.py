@@ -1,177 +1,141 @@
 import requests
-from bs4 import BeautifulSoup
 import pandas as pd
+from bs4 import BeautifulSoup
 
-# 全域 debug 開關
-DEBUG_MODE = False
+headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    )
+}
+
 
 def fetch_fin_ratio(stock_id):
-    """
-    從 財務比率表 抓 ROE 和 每股自由現金流量
-    """
-    url = f"https://goodinfo.tw/tw/StockFinDetail.asp?RPT_CAT=XX&STOCK_ID={stock_id}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    url = f"https://goodinfo.tw/tw/StockFinRatio.asp?STOCK_ID={stock_id}"
+    print(f"✅ [DEBUG] Requesting 財務比率 URL: {url}")
 
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        res.raise_for_status()
-    except Exception as e:
-        print(f"❗️ 財務比率表請求失敗: {e}")
-        return pd.DataFrame()
-
+    res = requests.get(url, headers=headers)
     res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
-    if DEBUG_MODE:
-        print("\n==== 財務比率表 HTML ====")
-        print(soup.prettify())
 
-    tables = soup.find_all('table')
+    # 👉 不管有沒有找到表格都先印
+    print("\n==== [FULL PAGE HTML - 財務比率表] ====")
+    print(soup.prettify())
 
-    target_table = None
-    for table in tables:
-        # 模糊匹配：避免官方微改版
-        if '股東權益' in table.text and '自由現金流' in table.text:
-            target_table = table
-            break
-
+    # 找出財務比率表
+    target_table = soup.find("table", class_="b1 p4_2 r10 box_shadow")
     if target_table is None:
-        print("❗️ 找不到 財務比率表")
+        print("❗️ 找不到財務比率表")
         return pd.DataFrame()
 
-    rows = target_table.find_all('tr')
-    years, roe_values, fcf_values = [], [], []
+    df = pd.read_html(str(target_table), flavor='bs4')[0]
+    print("\n✅ [DEBUG] 財務比率表 DataFrame 取得成功：")
+    print(df.head())
 
-    for row in rows:
-        cols = [td.get_text(strip=True).replace(',', '').replace('%', '') for td in row.find_all(['th', 'td'])]
-        if len(cols) < 6:
-            continue
-        if 'Q' in cols[0]:
-            continue
+    # 只取最近5年
+    df = df.iloc[:, :6]
+    df = df.set_index(df.columns[0]).T
+    df = df.rename_axis('Year').reset_index()
 
-        try:
-            year = int(cols[0])
-        except ValueError:
-            continue
+    df = df[['Year', '股東權益報酬率']]
+    df = df.rename(columns={'股東權益報酬率': 'ROE'})
 
-        try:
-            roe = float(cols[1])
-        except:
-            roe = None
+    print("\n✅ [DEBUG] 處理後 財務比率表 DataFrame：")
+    print(df)
 
-        try:
-            fcf = float(cols[-1])
-        except:
-            fcf = None
-
-        years.append(year)
-        roe_values.append(roe)
-        fcf_values.append(fcf)
-
-    return pd.DataFrame({
-        'Year': years,
-        'ROE': roe_values,
-        'FCF': fcf_values
-    })
+    return df
 
 
 def fetch_dividend_policy(stock_id):
-    """
-    從 股利政策頁 抓 盈餘分配率(%) ➜ 只保留年度總合行
-    固定指定 YEAR_MODE=發放年度
-    """
-    url = f"https://goodinfo.tw/tw/StockDividendPolicy.asp?STOCK_ID={stock_id}&YEAR_MODE=發放年度"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    url = f"https://goodinfo.tw/tw/StockDividendPolicy.asp?STOCK_ID={stock_id}"
+    print(f"✅ [DEBUG] Requesting 股利政策 URL: {url}")
 
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        res.raise_for_status()
-    except Exception as e:
-        print(f"❗️ 股利政策頁請求失敗: {e}")
-        return pd.DataFrame()
-
+    res = requests.get(url, headers=headers)
     res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
-    if DEBUG_MODE:
-        print("\n==== 股利政策 HTML ====")
-        print(soup.prettify())
 
-    tables = soup.find_all('table')
+    # 👉 不管有沒有找到表格都先印
+    print("\n==== [FULL PAGE HTML - 股利政策] ====")
+    print(soup.prettify())
 
-    target_table = None
-    for table in tables:
-        # 模糊匹配關鍵字
-        if '盈餘分配率' in table.text:
-            target_table = table
-            break
-
+    # 找出「盈餘分配率統計」表
+    target_table = soup.find("table", class_="b1 p4_2 r10 box_shadow")
     if target_table is None:
         print("❗️ 找不到 股利政策表")
         return pd.DataFrame()
 
-    rows = target_table.find_all('tr')
-    years, payout_values = [], []
+    df = pd.read_html(str(target_table), flavor='bs4')[0]
+    print("\n✅ [DEBUG] 股利政策表 DataFrame 取得成功：")
+    print(df.head())
 
-    for row in rows:
-        cols = [td.get_text(strip=True).replace(',', '').replace('%', '') for td in row.find_all(['th', 'td'])]
-        if len(cols) < 8:
-            continue
-        if 'Q' in cols[0]:
-            continue
+    # 只取最近5年
+    df = df[df.columns[:6]]
+    df.columns = df.columns.droplevel(0)
+    df = df.rename(columns={'年度': 'Year', '盈餘配息率(%)': 'PayoutRatio'})
+    df = df[['Year', 'PayoutRatio']].dropna()
 
-        try:
-            year = int(cols[0])
-        except ValueError:
-            continue
-
-        try:
-            payout = float(cols[-1]) / 100
-        except:
-            payout = None
-
-        years.append(year)
-        payout_values.append(payout)
-
-    return pd.DataFrame({
-        'Year': years,
-        'DividendPayoutRatio': payout_values
-    })
-
-
-def fetch_data(stock_id):
-    """
-    主函式：抓兩頁 ➜ 合併 ➜ 計算 g ➜ 顯示所有交集年份
-    """
-    print(f"\n🚀 正在抓取資料: {stock_id}")
-
-    df_fin = fetch_fin_ratio(stock_id)
-    if df_fin.empty:
-        print("❗️ 財務比率表抓不到")
-        return pd.DataFrame()
-
-    df_div = fetch_dividend_policy(stock_id)
-    if df_div.empty:
-        print("❗️ 股利政策抓不到")
-        return pd.DataFrame()
-
-    if DEBUG_MODE:
-        print("\n=== 抓到的 財務比率表 ===")
-        print(df_fin)
-        print("\n=== 抓到的 股利政策 ===")
-        print(df_div)
-
-    # 內聯結合併
-    df = pd.merge(df_fin, df_div, on='Year', how='inner')
-    if df.empty:
-        print("❗️ 兩表合併後沒資料（年度交集為空）")
-        return pd.DataFrame()
-
-    # 計算 g
-    df['g'] = df['ROE'] * (1 - df['DividendPayoutRatio'])
-
-    # 顯示所有交集年份（不硬限制5筆）
-    df = df.sort_values(by='Year', ascending=False).reset_index(drop=True)
-
-    print("\n✅ 最終合併結果：")
+    print("\n✅ [DEBUG] 處理後 股利政策表 DataFrame：")
     print(df)
 
     return df
+
+
+def fetch_fcf(stock_id):
+    url = f"https://goodinfo.tw/tw/StockCashFlow.asp?STOCK_ID={stock_id}"
+    print(f"✅ [DEBUG] Requesting 現金流量 URL: {url}")
+
+    res = requests.get(url, headers=headers)
+    res.encoding = 'utf-8'
+    soup = BeautifulSoup(res.text, 'html.parser')
+
+    # 👉 不管有沒有找到表格都先印
+    print("\n==== [FULL PAGE HTML - 現金流量] ====")
+    print(soup.prettify())
+
+    # 找出自由現金流
+    target_table = soup.find("table", class_="b1 p4_2 r10 box_shadow")
+    if target_table is None:
+        print("❗️ 找不到 現金流量表")
+        return pd.DataFrame()
+
+    df = pd.read_html(str(target_table), flavor='bs4')[0]
+    print("\n✅ [DEBUG] 現金流量表 DataFrame 取得成功：")
+    print(df.head())
+
+    # 只取「每股自由現金流量」
+    df = df[df.columns[:6]]
+    df = df.set_index(df.columns[0]).T
+    df = df.rename_axis('Year').reset_index()
+    df = df[['Year', '每股自由現金流量(元)']]
+    df = df.rename(columns={'每股自由現金流量(元)': 'FCF'})
+
+    print("\n✅ [DEBUG] 處理後 現金流量表 DataFrame：")
+    print(df)
+
+    return df
+
+
+def fetch_data(stock_id):
+    print(f"\n🎯 [DEBUG] fetch_data 呼叫，Stock ID = {stock_id}")
+
+    # 分別抓三段
+    df_ratio = fetch_fin_ratio(stock_id)
+    df_dividend = fetch_dividend_policy(stock_id)
+    df_fcf = fetch_fcf(stock_id)
+
+    if df_ratio.empty or df_dividend.empty or df_fcf.empty:
+        print("❗️ [DEBUG] 有空表，無法合併")
+        return pd.DataFrame()
+
+    # 合併
+    merged = pd.merge(df_ratio, df_dividend, on='Year', how='inner')
+    merged = pd.merge(merged, df_fcf, on='Year', how='inner')
+
+    # 計算 g
+    merged['PayoutRatio'] = merged['PayoutRatio'] / 100
+    merged['g'] = merged['ROE'] * (1 - merged['PayoutRatio'])
+
+    print("\n✅ [DEBUG] 最後合併好的 DataFrame：")
+    print(merged)
+
+    return merged
