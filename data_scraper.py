@@ -4,7 +4,7 @@ import pandas as pd
 
 def fetch_fin_ratio(stock_id):
     """
-    從 財務比率表 抓所有年度的 ROE 和 每股自由現金流量
+    從 財務比率表 抓 ROE 和 每股自由現金流量
     """
     url = f"https://goodinfo.tw/tw/StockFinDetail.asp?RPT_CAT=XX&STOCK_ID={stock_id}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -31,6 +31,7 @@ def fetch_fin_ratio(stock_id):
         return pd.DataFrame()
 
     rows = target_table.find_all('tr')
+
     years = []
     roe_values = []
     fcf_values = []
@@ -38,6 +39,10 @@ def fetch_fin_ratio(stock_id):
     for row in rows:
         cols = [td.get_text(strip=True).replace(',', '').replace('%', '') for td in row.find_all(['th', 'td'])]
         if len(cols) < 6:
+            continue
+
+        # 排除季度行
+        if 'Q' in cols[0]:
             continue
 
         try:
@@ -68,7 +73,7 @@ def fetch_fin_ratio(stock_id):
 
 def fetch_dividend_policy(stock_id):
     """
-    從 股利政策頁 抓所有年度的 盈餘分配率(%) ➜ 合計欄
+    從 股利政策頁 抓 盈餘分配率(%) ➜ 只保留年度總合行
     """
     url = f"https://goodinfo.tw/tw/StockDividendPolicy.asp?STOCK_ID={stock_id}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -103,6 +108,10 @@ def fetch_dividend_policy(stock_id):
         if len(cols) < 8:
             continue
 
+        # 排除季度行
+        if 'Q' in cols[0]:
+            continue
+
         try:
             year = int(cols[0])
         except ValueError:
@@ -124,7 +133,7 @@ def fetch_dividend_policy(stock_id):
 
 def fetch_data(stock_id):
     """
-    主函式：抓兩頁 ➜ 合併 ➜ 計算 g ➜ 取交集近5年
+    主函式：抓兩頁 ➜ 合併 ➜ 計算 g ➜ 取近5年
     """
     df_fin = fetch_fin_ratio(stock_id)
     df_div = fetch_dividend_policy(stock_id)
@@ -137,17 +146,17 @@ def fetch_data(stock_id):
         print("❗️ 股利政策抓不到")
         return pd.DataFrame()
 
-    # 合併所有抓到的資料
+    # 內聯結合併
     df = pd.merge(df_fin, df_div, on='Year', how='inner')
 
     if df.empty:
         print("❗️ 兩表合併後沒資料")
         return pd.DataFrame()
 
-    # 取交集後的最新5年
-    df = df.sort_values(by='Year', ascending=False).head(5).reset_index(drop=True)
-
     # 計算 g
     df['g'] = df['ROE'] * (1 - df['DividendPayoutRatio'])
+
+    # 取近5年
+    df = df.sort_values(by='Year', ascending=False).head(5)
 
     return df
