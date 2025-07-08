@@ -1,10 +1,24 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import re
+
+def parse_policy_text(policy_text):
+    """
+    從「股利政策」欄位裡解析「盈餘分配率」數值
+    例如「盈餘分配率60%」 ➜ 0.6
+    """
+    if not policy_text:
+        return None
+    policy_text = policy_text.replace('％', '%').replace(' ', '').strip()
+    match = re.search(r'盈餘分配率\s*([0-9]+(?:\.[0-9]+)?)%', policy_text)
+    if match:
+        return float(match.group(1)) / 100
+    return None
 
 def fetch_data(stock_id):
     """
-    從 Goodinfo.tw 爬取台股近五年ROE、股息發放率、自由現金流
+    從 Goodinfo.tw 爬取台股近五年股東權益報酬率、股利政策（含盈餘分配率）、自由現金流
     回傳 pandas DataFrame
     """
 
@@ -24,19 +38,19 @@ def fetch_data(stock_id):
     soup = BeautifulSoup(res.text, 'html.parser')
     tables = soup.find_all('table')
 
-    # 尋找含有「ROE」或「股東權益報酬率」以及「股利發放率」的表格
+    # 找到含「股東權益」和「股利」關鍵字的表
     target_table = None
     for table in tables:
-        table_text = table.text
-        if (('ROE' in table_text or '股東權益報酬率' in table_text) and '股利發放率' in table_text):
+        table_text = table.text.replace('%','').replace(' ', '').lower()
+        if '股東權益' in table_text and '股利' in table_text:
             target_table = table
             break
 
     if target_table is None:
-        print("❗️ 找不到含ROE/股東權益報酬率/股利發放率的表格")
+        print("❗️ 找不到含股東權益/股利關鍵字的表格")
         return pd.DataFrame()
 
-    # 解析表格內容
+    # 解析表格
     rows = target_table.find_all('tr')
     years = []
     roe_values = []
@@ -44,7 +58,7 @@ def fetch_data(stock_id):
     fcf_values = []
 
     for row in rows:
-        cols = [td.get_text(strip=True).replace(',', '').replace('%','') for td in row.find_all(['th', 'td'])]
+        cols = [td.get_text(strip=True) for td in row.find_all(['th', 'td'])]
         if len(cols) < 4:
             continue
 
@@ -56,24 +70,25 @@ def fetch_data(stock_id):
         if len(years) >= 5:
             break
 
+        # 解析 ROE
         try:
-            roe = float(cols[1])
+            roe = float(cols[1].replace('%','').replace(',',''))
         except:
             roe = None
 
-        try:
-            payout = float(cols[2])
-        except:
-            payout = None
+        # 解析股利政策 ➜ 抓出「盈餘分配率」
+        policy_text = cols[2]
+        payout_ratio = parse_policy_text(policy_text)
 
+        # 解析自由現金流
         try:
-            fcf = float(cols[3])
+            fcf = float(cols[3].replace(',',''))
         except:
             fcf = None
 
         years.append(year)
         roe_values.append(roe)
-        payout_values.append(payout)
+        payout_values.append(payout_ratio)
         fcf_values.append(fcf)
 
     if not years:
